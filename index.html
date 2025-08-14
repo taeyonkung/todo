@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>My Simple Notion-ish — Calendar Grid + Cloud</title>
+<style>
+  :root { --bg:#0f1115; --fg:#e6e6e6; --muted:#9aa0a6; --panel:#1a1f29; --accent:#4ea1ff; --warn:#ff6b6b; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui,-apple-system,Segoe UI,Roboto; }
+  button, input, textarea, select { font: inherit; color: inherit; }
+  a { color: var(--accent); text-decoration: none; }
+  .app { display: grid; grid-template-columns: 260px 1fr; grid-template-rows: 48px 1fr; height: 100%; }
+  header { grid-column: 1 / 3; display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #121621; border-bottom: 1px solid #222836; }
+  header .title { font-weight: 600; margin-right: auto; }
+  header button { background: #232a3a; border: 1px solid #2c3447; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+  header button:hover { border-color: #3a455e; }
+  .sidebar { background: var(--panel); border-right: 1px solid #222836; padding: 8px; overflow: auto; }
+  .sidebar .top { display:flex; gap:8px; margin-bottom: 8px; }
+  .sidebar input { width: 100%; padding: 6px 8px; border: 1px solid #2c3447; border-radius: 6px; background:#151924; }
+  .pages { display: flex; flex-direction: column; gap: 4px; }
+  .page-item { display:flex; align-items:center; gap:6px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+  .page-item:hover { background:#22283a; }
+  .page-item.active { background:#26324a; }
+  .page-item .name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .page-item .mini { opacity:.6; font-size:12px; }
+  .main { padding: 12px; overflow: auto; }
+  .row { display:flex; gap:8px; flex-wrap: wrap; }
+  .row > * { margin: 0; }
+  .title-input { width: 100%; font-size: 20px; font-weight: 600; padding: 8px 10px; border-radius: 8px; border:1px solid #2c3447; background:#151924; }
+  .toolbar { display:flex; gap:8px; margin: 10px 0 14px; }
+  .toolbar button { background:#232a3a; border:1px solid #2c3447; padding:6px 10px; border-radius:6px; cursor:pointer; }
+  .toolbar button.danger { border-color:#59363b; color:#ffb4b4; }
+  .toolbar input[type="search"]{ flex:1; padding:6px 10px; border:1px solid #2c3447; border-radius:6px; background:#151924; }
+  .blocks { display:flex; flex-direction: column; gap:10px; }
+  .block { background:#121725; border:1px solid #222836; border-radius:8px; padding:10px; }
+  .block .actions { display:flex; gap:6px; justify-content: space-between; align-items:center; margin-top:8px; }
+  textarea.text { width:100%; min-height:80px; resize: vertical; border:1px solid #2c3447; border-radius:6px; padding:8px; background:#0f1421; }
+  .todo { display:flex; gap:8px; align-items:center; }
+  .todo input[type="text"]{ flex:1; padding:6px 8px; border:1px solid #2c3447; border-radius:6px; background:#0f1421; }
+  .muted { color: var(--muted); }
+  .footer { margin-top: 12px; font-size: 12px; color: var(--muted); }
+  .result-panel { position: fixed; right: 12px; bottom: 12px; width: 360px; max-height: 50vh; overflow: auto; background:#121725; border:1px solid #222836; border-radius:10px; box-shadow: 0 6px 30px rgba(0,0,0,.4); }
+  .result-panel header { display:flex; align-items:center; justify-content: space-between; padding:8px 10px; border-bottom: 1px solid #222836; background:#0f1421; }
+  .result-list { padding:8px 10px; display:flex; flex-direction: column; gap:6px; }
+  .small { font-size: 12px; }
+  .hidden { display:none; }
+  #globalView { background:#232a3a; border:1px solid #2c3447; padding:6px 8px; border-radius:6px; }
+
+  /* Calendar grid */
+  .cal { display:flex; flex-direction: column; gap:8px; }
+  .cal .cal-header { display:flex; align-items:center; gap:8px; }
+  .cal .cal-header .nav { display:flex; gap:6px; }
+  .cal .weekday { display:grid; grid-template-columns: repeat(7, 1fr); gap:4px; text-align:center; color: var(--muted); font-size:12px; }
+  .cal .grid { display:grid; grid-template-columns: repeat(7, 1fr); gap:6px; }
+  .cal .cell { background:#121725; border:1px solid #222836; border-radius:8px; min-height:110px; padding:6px; display:flex; flex-direction:column; gap:4px; }
+  .cal .cell .daybar { display:flex; align-items:center; justify-content: space-between; font-size:12px; color:var(--muted); }
+  .cal .cell .add { background:#232a3a; border:1px solid #2c3447; border-radius:6px; padding:2px 6px; font-size:12px; cursor:pointer; }
+  .cal .cell.out { opacity:.45; }
+  .cal .item { background:#0f1421; border:1px solid #2c3447; border-radius:6px; padding:4px 6px; font-size:12px; display:flex; gap:6px; align-items:center; }
+  .cal .time { font-variant-numeric: tabular-nums; color:#cbd5e1; }
+
+  /* Year grid */
+  .year-wrap { display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap:10px; }
+  .month-card { background:#121725; border:1px solid #222836; border-radius:10px; padding:8px; }
+  .month-card h3 { margin:4px 2px 8px; font-size:14px; }
+  .mini-weekday { display:grid; grid-template-columns: repeat(7, 1fr); text-align:center; color:var(--muted); font-size:11px; gap:2px; }
+  .mini-grid { display:grid; grid-template-columns: repeat(7, 1fr); gap:2px; }
+  .mini-cell { border:1px solid #222836; border-radius:6px; padding:4px; text-align:right; height:34px; position:relative; cursor:pointer; }
+  .mini-cell.out { opacity:.45; }
+  .mini-cell .count { position:absolute; left:4px; bottom:2px; font-size:10px; color:var(--muted); }
+
+  /* Modals */
+  .modal { position: fixed; inset: 0; display:none; align-items:center; justify-content:center; background: rgba(0,0,0,.5); }
+  .modal .panel { width: 380px; background:#121725; border:1px solid #222836; border-radius:12px; padding:12px; display:flex; flex-direction:column; gap:8px; }
+  .modal .row { display:flex; gap:8px; }
+  .modal input, .modal select, .modal textarea { width:100%; padding:6px 8px; border:1px solid #2c3447; border-radius:6px; background:#151924; color:var(--fg); }
+  .modal .actions { display:flex; gap:8px; justify-content:flex-end; }
+  .note { font-size:12px; color:var(--muted); }
+  .ok { color: #a7f3d0; }
+  .err { color: var(--warn); }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="title">Notion-ish (Local)</div>
+    <select id="globalView" title="View">
+      <option value="page">Page</option>
+      <option value="today">Today (list)</option>
+      <option value="week">Week (list)</option>
+      <option value="month">Month (grid)</option>
+      <option value="year">Year (grid)</option>
+    </select>
+    <button id="addPageBtn">+ หน้า</button>
+    <button id="exportBtn">Export</button>
+    <button id="importBtn">Import</button>
+    <button id="cloudBtn">Cloud</button>
+    <input id="importFile" type="file" accept="application/json" class="hidden" />
+  </header>
+
+  <aside class="sidebar">
+    <div class="top">
+      <input id="sidebarSearch" type="search" placeholder="ค้นหาหน้า..." />
+      <button id="newPageBtn">+ ใหม่</button>
+    </div>
+    <div class="pages" id="pageList"></div>
+  </aside>
+
+  <main class="main" id="pageMain">
+    <input id="pageTitle" class="title-input" placeholder="ชื่อหน้า" />
+    <div class="toolbar">
+      <button id="addText">+ ข้อความ</button>
+      <button id="addTodo">+ To-Do</button>
+      <input id="blockSearch" type="search" placeholder="ค้นหาในหน้านี้... (กด Enter)" />
+      <button id="deletePage" class="danger">ลบหน้า</button>
+    </div>
+    <div id="blocks" class="blocks"></div>
+    <div class="footer muted">ข้อมูลเก็บในเครื่องคุณ หากจะย้ายเครื่อง ใช้ Export/Import หรือ Cloud</div>
+  </main>
+
+  <main id="agendaMain" class="main hidden">
+    <div id="agendaContainer"></div>
+    <div class="footer muted small">มุมมอง Month/Year เป็นตาราง Sun→Sat คลิกวันที่เพื่อเพิ่มงานพร้อมเวลาได้</div>
+  </main>
+</div>
+
+<!-- ผลค้นหาทุกหน้า -->
+<div id="searchPanel" class="result-panel hidden" aria-live="polite">
+  <header>
+    <div>ผลค้นหา</div>
+    <button id="closeSearch">ปิด</button>
+  </header>
+  <div id="resultList" class="result-list"></div>
+</div>
+
+<!-- Quick Add Modal -->
+<div id="quickModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="qmTitle">
+  <div class="panel">
+    <div id="qmTitle" style="font-weight:600;">เพิ่ม To-Do</div>
+    <div class="row"><input id="qmText" type="text" placeholder="หัวข้อ" /></div>
+    <div class="row">
+      <input id="qmDate" type="date" />
+      <input id="qmTime" type="time" />
+    </div>
+    <div class="row"><select id="qmPage"></select></div>
+    <div class="actions">
+      <button id="qmCancel">ยกเลิก</button>
+      <button id="qmSave">บันทึก</button>
+    </div>
+  </div>
+</div>
+
+<!-- Cloud Modal (GitHub Gist sync แบบง่าย) -->
+<div id="cloudModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="cmTitle">
+  <div class="panel">
+    <div id="cmTitle" style="font-weight:600;">Cloud Sync (GitHub Gist)</div>
+    <div class="note">ต้องมี GitHub token ที่มีสิทธิ์ gist เท่านั้น ข้อมูลจะเก็บในไฟล์ JSON ใน Gist ของคุณ</div>
+    <div class="row"><input id="ghToken" type="password" placeholder="GitHub Token (scope: gist)" autocomplete="off" /></div>
+    <div class="row"><input id="ghGistId" type="text" placeholder="Gist ID (เว้นว่างเพื่อสร้างใหม่)" /></div>
+    <div class="row"><input id="ghFilename" type="text" placeholder="ชื่อไฟล์ เช่น notionish-backup.json" value="notionish-backup.json" /></div>
+    <div class="row"><label style="display:flex; gap:8px; align-items:center;"><input id="ghAutosync" type="checkbox" /> เปิด autosync (10 นาที)</label></div>
+    <div id="cloudStatus" class="note">ยังไม่ได้เชื่อมต่อ</div>
+    <div class="actions">
+      <button id="cmClose">ปิด</button>
+      <button id="cmCreate">สร้าง Gist ใหม่</button>
+      <button id="cmSaveCfg">บันทึกการตั้งค่า</button>
+      <button id="cmPull">ดึงจาก Cloud</button>
+      <button id="cmPush">อัปขึ้น Cloud</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------- เก็บข้อมูล ---------- */
+const STORAGE_KEY = "notionish-data-v1";
+const CLOUD_CFG_KEY = "notionish-cloud-config-v1";
+const el = sel => document.querySelector(sel);
+
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+let data = loadData() || seed();
+let cloudCfg = loadCloudCfg() || { token:"", gistId:"", filename:"notionish-backup.json", autosync:false, lastPushAt:null };
+let autosyncTimer = null;
+
+function seed(){
+  const pageId = uid();
+  return {
+    selectedPageId: pageId,
+    pages: [{
+      id: pageId,
+      title: "หน้าแรก",
+      blocks: [
+        { id: uid(), type: "text", text: "ยินดีต้อนรับ ใช้ปุ่ม + เพื่อเพิ่มบล็อก", createdAt: Date.now() },
+        { id: uid(), type: "todo", text: "ลองสร้าง To-Do รายการแรก", done:false, due:null, createdAt: Date.now() }
+      ],
+      createdAt: Date.now(), updatedAt: Date.now()
+    }]
+  };
+}
+function loadData(){ try { return JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch { return null; } }
+function saveData(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+function loadCloudCfg(){ try { return JSON.parse(localStorage.getItem(CLOUD_CFG_KEY)); } catch { return null; } }
+function saveCloudCfg(){ localStorage.setItem(CLOUD_CFG_KEY, JSON.stringify(cloudCfg)); }
+
+/* ---------- อ้างอิง DOM ---------- */
+const pageListEl = el('#pageList');
+const blocksEl = el('#blocks');
+const pageTitleEl = el('#pageTitle');
+const sidebarSearchEl = el('#sidebarSearch');
+const blockSearchEl = el('#blockSearch');
+const agendaContainer = el('#agendaContainer');
+
+function currentPage(){ return data.pages.find(p => p.id === data.selectedPageId) || data.pages[0]; }
+
+/* ---------- Sidebar ---------- */
+function renderSidebar(){
+  const q = (sidebarSearchEl.value||'').trim().toLowerCase();
+  pageListEl.innerHTML = '';
+  data.pages
+    .filter(p => p.title.toLowerCase().includes(q))
+    .sort((a,b)=>b.updatedAt - a.updatedAt)
+    .forEach(p => {
+      const div = document.createElement('div');
+      div.className = 'page-item' + (p.id === data.selectedPageId ? ' active' : '');
+      div.innerHTML = `
+        <div class="name" title="${escapeHtml(p.title)}">${escapeHtml(p.title)}</div>
+        <div class="mini small">${new Date(p.updatedAt).toLocaleDateString()}</div>`;
+      div.addEventListener('click', () => { data.selectedPageId = p.id; renderAll(); saveData(); });
+      pageListEl.appendChild(div);
+    });
+}
+
+/* ---------- Page (blocks) ---------- */
+function renderPage(){
+  const page = currentPage(); if (!page) return;
+  pageTitleEl.value = page.title;
+
+  const q = (blockSearchEl.value||'').trim().toLowerCase();
+  blocksEl.innerHTML = '';
+  page.blocks
+    .filter(b => !q || (b.text||'').toLowerCase().includes(q))
+    .forEach(b => {
+      const wrap = document.createElement('div');
+      wrap.className = 'block';
+      if (b.type === 'text') {
+        wrap.innerHTML = `
+          <div><textarea class="text" data-id="${b.id}" placeholder="พิมพ์ข้อความ..."></textarea></div>
+          <div class="actions">
+            <div class="small muted">ข้อความ</div>
+            <div>
+              <button data-up="${b.id}">▲</button>
+              <button data-down="${b.id}">▼</button>
+              <button data-del="${b.id}" class="danger">ลบ</button>
+            </div>
+          </div>`;
+        const ta = wrap.querySelector('textarea');
+        ta.value = b.text || '';
+        ta.addEventListener('input', e => { b.text = e.target.value; page.updatedAt = Date.now(); saveData(); });
+      } else if (b.type === 'todo') {
+        wrap.innerHTML = `
+          <label class="todo">
+            <input type="checkbox" data-check="${b.id}" ${b.done ? 'checked' : ''} />
+            <input type="text" data-todo="${b.id}" value="${escapeAttr(b.text||'')}" placeholder="To-Do..." />
+            <input type="datetime-local" data-due="${b.id}" value="${toDatetimeLocalValue(b.due)}" />
+          </label>
+          <div class="actions">
+            <span class="muted small" data-dueview="${b.id}">${b.due ? 'กำหนด: ' + shortDateTime(b.due) : 'ยังไม่กำหนดเวลา'}</span>
+            <div>
+              <button data-up="${b.id}">▲</button>
+              <button data-down="${b.id}">▼</button>
+              <button data-del="${b.id}" class="danger">ลบ</button>
+            </div>
+          </div>`;
+      }
+
+      // events
+      wrap.querySelector(`[data-del="${b.id}"]`)?.addEventListener('click', () => delBlock(b.id));
+      wrap.querySelector(`[data-up="${b.id}"]`)?.addEventListener('click', () => moveBlock(b.id, -1));
+      wrap.querySelector(`[data-down="${b.id}"]`)?.addEventListener('click', () => moveBlock(b.id, +1));
+      wrap.querySelector(`[data-todo="${b.id}"]`)?.addEventListener('input', e => { b.text = e.target.value; page.updatedAt = Date.now(); saveData(); });
+      wrap.querySelector(`[data-check="${b.id}"]`)?.addEventListener('change', e => { b.done = e.target.checked; page.updatedAt = Date.now(); saveData(); });
+      wrap.querySelector(`[data-due="${b.id}"]`)?.addEventListener('change', e => {
+        const v = e.target.value;
+        b.due = v ? new Date(v).getTime() : null;
+        page.updatedAt = Date.now();
+        const lab = wrap.querySelector(`[data-dueview="${b.id}"]`);
+        if (lab) lab.textContent = b.due ? ('กำหนด: ' + shortDateTime(b.due)) : 'ยังไม่กำหนดเวลา';
+        saveData();
+      });
+
+      blocksEl.appendChild(wrap);
+    });
+}
+
+function renderAll(){ renderSidebar(); renderPage(); }
+
+/* ---------- Page ops ---------- */
+function addPage(){ const p = { id: uid(), title: 'หน้าใหม่', blocks: [], createdAt: Date.now(), updatedAt: Date.now() }; data.pages.push(p); data.selectedPageId = p.id; saveData(); renderAll(); }
+function renamePage(title){ const p = currentPage(); if (!p) return; p.title = title || 'ไม่มีชื่อ'; p.updatedAt = Date.now(); saveData(); renderSidebar(); }
+function deletePage(){ if (!confirm('ลบหน้านี้ ใช่หรือไม่')) return; const pid = currentPage()?.id; data.pages = data.pages.filter(p => p.id !== pid); if (data.pages.length) data.selectedPageId = data.pages[0].id; saveData(); renderAll(); }
+
+/* ---------- Block ops ---------- */
+function addBlock(type){ const p = currentPage(); if (!p) return; if (type==='text') p.blocks.push({ id: uid(), type:'text', text:'', createdAt: Date.now() }); if (type==='todo') p.blocks.push({ id: uid(), type:'todo', text:'', done:false, due:null, createdAt: Date.now() }); p.updatedAt = Date.now(); saveData(); renderPage(); }
+function delBlock(id){ const p = currentPage(); if (!p) return; p.blocks = p.blocks.filter(b => b.id !== id); p.updatedAt = Date.now(); saveData(); renderPage(); }
+function moveBlock(id, delta){ const p = currentPage(); if (!p) return; const i = p.blocks.findIndex(b => b.id === id); const j = i + delta; if (i < 0 || j < 0 || j >= p.blocks.length) return; const tmp = p.blocks[i]; p.blocks[i] = p.blocks[j]; p.blocks[j] = tmp; p.updatedAt = Date.now(); saveData(); renderPage(); }
+
+/* ---------- Search all pages ---------- */
+function searchAll(q){ q=(q||'').trim().toLowerCase(); const out=[]; if(!q) return out; data.pages.forEach(p=>{ p.blocks.forEach(b=>{ const text=(b.text||''); if(text.toLowerCase().includes(q)) out.push({ pageId:p.id, pageTitle:p.title, blockId:b.id, text, type:b.type }); }); }); return out.slice(0,200); }
+function openSearchPanel(results){ const panel=el('#searchPanel'); const list=el('#resultList'); list.innerHTML = results.map(r=>`<div><div class="small muted">${escapeHtml(r.pageTitle)} • ${r.type}</div><div>${highlight(escapeHtml(r.text), el('#blockSearch').value)}</div><div><button data-jump="${r.pageId}:${r.blockId}">ไปที่</button></div></div>`).join(''); list.querySelectorAll('[data-jump]').forEach(btn=>{ btn.addEventListener('click', e=>{ const [pid,bid]=e.target.dataset.jump.split(':'); data.selectedPageId=pid; saveData(); renderAll(); setTimeout(()=>{ const blk=[...document.querySelectorAll('.block')].find(x=>x.querySelector(`[data-id="${bid}"],[data-todo="${bid}"]`)); blk?.scrollIntoView({behavior:'smooth',block:'center'}); },50); closeSearchPanel(); }); }); panel.classList.remove('hidden'); }
+function closeSearchPanel(){ el('#searchPanel').classList.add('hidden'); }
+
+/* ---------- Utils ---------- */
+function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m])); }
+function escapeAttr(s){ return escapeHtml(s).replace(/"/g,'&quot;'); }
+function highlight(text,q){ q=q||''; if(!q) return text; const re=new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','ig'); return text.replace(re,'<mark>$1</mark>'); }
+
+/* ---------- Date helpers ---------- */
+function startOfDay(d){ const x=new Date(d); x.setHours(0,0,0,0); return x; }
+function endOfDay(d){ const x=new Date(d); x.setHours(23,59,59,999); return x; }
+function startOfWeekSun(d){ const x=startOfDay(d); const day=x.getDay(); x.setDate(x.getDate()-day); return x; } // Sun=0
+function endOfWeekSun(d){ const x=startOfWeekSun(d); x.setDate(x.getDate()+6); x.setHours(23,59,59,999); return x; }
+function startOfMonth(d){ return new Date(d.getFullYear(), d.getMonth(), 1); }
+function endOfMonth(d){ return new Date(d.getFullYear(), d.getMonth()+1, 0, 23,59,59,999); }
+function startOfYear(d){ return new Date(d.getFullYear(),0,1); }
+function endOfYear(d){ return new Date(d.getFullYear(),11,31,23,59,59,999); }
+function toDatetimeLocalValue(ts){ if(!ts) return ''; const d=new Date(ts); const pad=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+function shortDateTime(ts){ if(!ts) return ''; const d=new Date(ts); return d.toLocaleString([], {year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'}); }
+function pad2(n){ return String(n).padStart(2,'0'); }
+
+/* ---------- To-Do helpers ---------- */
+function collectTodos(){ const list=[]; data.pages.forEach(p=>{ p.blocks.forEach(b=>{ if(b.type==='todo') list.push({ pageId:p.id, pageTitle:p.title, id:b.id, text:b.text||'', done:!!b.done, due:b.due||null }); }); }); return list; }
+function todosOnDate(date){ const s=startOfDay(date).getTime(); const e=endOfDay(date).getTime(); return collectTodos().filter(t=>t.due && t.due>=s && t.due<=e).sort((a,b)=>a.due-b.due); }
+
+/* ---------- Agenda (list + grid) ---------- */
+function switchView(mode){ const pageMain=el('#pageMain'); const agendaMain=el('#agendaMain'); if(mode==='page'){ pageMain.classList.remove('hidden'); agendaMain.classList.add('hidden'); return; } pageMain.classList.add('hidden'); agendaMain.classList.remove('hidden'); if(mode==='today' || mode==='week'){ renderAgendaList(mode); } else if(mode==='month'){ renderMonthGrid(new Date()); } else if(mode==='year'){ renderYearGrid(new Date()); } }
+
+function renderAgendaList(mode){
+  const now=new Date(); let from,to,title;
+  if(mode==='today'){ from=startOfDay(now); to=endOfDay(now); title='Today'; }
+  else { from=startOfWeekSun(now); to=endOfWeekSun(now); title='This Week'; }
+  const all=collectTodos().filter(x=>x.due && x.due>=from.getTime() && x.due<=to.getTime()).sort((a,b)=>(a.due||0)-(b.due||0));
+  // group by date
+  const groups={}; all.forEach(t=>{ const d=new Date(t.due); const key=d.toISOString().slice(0,10); (groups[key] ||= []).push(t); });
+  const keys=Object.keys(groups).sort();
+  agendaContainer.innerHTML = `<div class="muted" style="margin-bottom:8px;">${title}</div>` + keys.map(k=>{ const nice=new Date(k+'T00:00:00'); const head=`<div class="muted" style="margin:6px 0;">${nice.toLocaleDateString([], { weekday:'short', year:'numeric', month:'2-digit', day:'2-digit'})}</div>`; const items=groups[k].map(t=>`<div class="block"><div style="display:flex; align-items:center; gap:8px;"><input type="checkbox" data-agenda-check="${t.pageId}:${t.id}" ${t.done?'checked':''} /><div style="flex:1;"><div>${escapeHtml(t.text||'(ไม่มีชื่อ)')}</div><div class="small muted">${escapeHtml(t.pageTitle)} • ${shortDateTime(t.due)}</div></div><button class="small" data-agenda-goto="${t.pageId}:${t.id}">ไปที่หน้า</button></div></div>`).join(''); return `<div>${head}${items}</div>`; }).join('');
+  // events
+  agendaContainer.querySelectorAll('[data-agenda-goto]').forEach(btn=>{ btn.addEventListener('click', e=>{ const [pid,bid]=e.currentTarget.dataset.agendaGoto.split(':'); data.selectedPageId=pid; saveData(); renderAll(); el('#globalView').value='page'; switchView('page'); setTimeout(()=>{ const blk=[...document.querySelectorAll('.block')].find(x=>x.querySelector(`[data-id="${bid}"],[data-todo="${bid}"]`)); blk?.scrollIntoView({behavior:'smooth',block:'center'}); },50); }); });
+  agendaContainer.querySelectorAll('[data-agenda-check]').forEach(ch=>{ ch.addEventListener('change', e=>{ const [pid,bid]=e.currentTarget.dataset.agendaCheck.split(':'); const page=data.pages.find(p=>p.id===pid); const blk=page?.blocks.find(b=>b.id===bid); if(blk && blk.type==='todo'){ blk.done=e.currentTarget.checked; page.updatedAt=Date.now(); saveData(); } }); });
+}
+
+/* ---------- Month grid (Sun→Sat) ---------- */
+let monthCursor = new Date();
+function renderMonthGrid(base){ monthCursor = new Date(base.getFullYear(), base.getMonth(), 1); const monthStart=startOfMonth(monthCursor); const gridStart=startOfWeekSun(monthStart); const cells=[]; for(let d=new Date(gridStart); cells.length<42; d.setDate(d.getDate()+1)){ cells.push(new Date(d)); }
+  agendaContainer.innerHTML = '';
+  const wrap=document.createElement('div'); wrap.className='cal';
+  wrap.innerHTML = `
+    <div class="cal-header">
+      <div class="nav">
+        <button id="mPrev">◀</button>
+        <div style="min-width:140px; text-align:center;">${monthCursor.getFullYear()} / ${pad2(monthCursor.getMonth()+1)}</div>
+        <button id="mNext">▶</button>
+        <button id="mToday">Today</button>
+      </div>
+    </div>
+    <div class="weekday"><div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div></div>
+    <div class="grid" id="monthGrid"></div>
+  `;
+  agendaContainer.appendChild(wrap);
+  const grid=wrap.querySelector('#monthGrid');
+  grid.innerHTML = cells.map(d=>{ const out = d.getMonth()!==monthCursor.getMonth(); const items=todosOnDate(d); const dayNum=d.getDate(); const itemHtml = items.map(t=>`<div class="item"><span class="time">${pad2(new Date(t.due).getHours())}:${pad2(new Date(t.due).getMinutes())}</span><input type="checkbox" data-mcheck="${t.pageId}:${t.id}" ${t.done?'checked':''} /><div style="flex:1;">${escapeHtml(t.text)}</div></div>`).join(''); return `<div class="cell ${out?'out':''}" data-date="${d.toISOString()}"><div class="daybar"><span>${dayNum}</span><button class="add" data-add="${d.toISOString()}">+</button></div>${itemHtml}</div>`; }).join('');
+  // events nav
+  wrap.querySelector('#mPrev').addEventListener('click', ()=>{ renderMonthGrid(new Date(monthCursor.getFullYear(), monthCursor.getMonth()-1, 1)); });
+  wrap.querySelector('#mNext').addEventListener('click', ()=>{ renderMonthGrid(new Date(monthCursor.getFullYear(), monthCursor.getMonth()+1, 1)); });
+  wrap.querySelector('#mToday').addEventListener('click', ()=>{ renderMonthGrid(new Date()); });
+  // add item
+  grid.querySelectorAll('[data-add]').forEach(btn=>{ btn.addEventListener('click', e=>{ const dt=new Date(e.currentTarget.dataset.add); openQuickAdd(dt); }); });
+  // toggle done
+  grid.querySelectorAll('[data-mcheck]').forEach(ch=>{ ch.addEventListener('change', e=>{ const [pid,bid]=e.currentTarget.dataset.mcheck.split(':'); const page=data.pages.find(p=>p.id===pid); const blk=page?.blocks.find(b=>b.id===bid); if(blk && blk.type==='todo'){ blk.done=e.currentTarget.checked; page.updatedAt=Date.now(); saveData(); } }); });
+}
+
+/* ---------- Year grid ---------- */
+let yearCursor = new Date();
+function renderYearGrid(base){ yearCursor = new Date(base.getFullYear(), 0, 1); const y=yearCursor.getFullYear(); agendaContainer.innerHTML=''; const wrap=document.createElement('div'); wrap.className='cal'; wrap.innerHTML = `
+    <div class="cal-header">
+      <div class="nav">
+        <button id="yPrev">◀</button>
+        <div style="min-width:140px; text-align:center;">${y}</div>
+        <button id="yNext">▶</button>
+        <button id="yToday">Today</button>
+      </div>
+    </div>
+    <div class="year-wrap" id="yearWrap"></div>
+  `; agendaContainer.appendChild(wrap);
+  const container=wrap.querySelector('#yearWrap');
+  for(let m=0;m<12;m++){
+    const mStart=new Date(y,m,1); const gStart=startOfWeekSun(mStart); const cells=[]; for(let d=new Date(gStart); cells.length<42; d.setDate(d.getDate()+1)) cells.push(new Date(d));
+    const card=document.createElement('div'); card.className='month-card';
+    card.innerHTML = `<h3>${y} / ${pad2(m+1)}</h3>
+      <div class="mini-weekday"><div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div></div>
+      <div class="mini-grid">${cells.map(d=>{ const out=d.getMonth()!==m; const day=d.getDate(); const count=todosOnDate(d).length; return `<div class="mini-cell ${out?'out':''}" data-add="${d.toISOString()}">${day}<span class="count">${count?count:''}</span></div>`; }).join('')}</div>`;
+    container.appendChild(card);
+  }
+  // nav
+  wrap.querySelector('#yPrev').addEventListener('click', ()=>{ renderYearGrid(new Date(y-1,0,1)); });
+  wrap.querySelector('#yNext').addEventListener('click', ()=>{ renderYearGrid(new Date(y+1,0,1)); });
+  wrap.querySelector('#yToday').addEventListener('click', ()=>{ renderYearGrid(new Date()); });
+  // add on click
+  container.querySelectorAll('[data-add]').forEach(cell=>{ cell.addEventListener('click', e=>{ const dt=new Date(e.currentTarget.dataset.add); openQuickAdd(dt); }); });
+}
+
+/* ---------- Quick Add Modal ---------- */
+const modal = el('#quickModal');
+const qmText = el('#qmText');
+const qmDate = el('#qmDate');
+const qmTime = el('#qmTime');
+const qmPage = el('#qmPage');
+let modalDate = new Date();
+
+function openQuickAdd(date){ modalDate = startOfDay(date); qmText.value=''; qmDate.value = `${modalDate.getFullYear()}-${pad2(modalDate.getMonth()+1)}-${pad2(modalDate.getDate())}`; qmTime.value='09:00'; qmPage.innerHTML = data.pages.map(p=>`<option value="${p.id}" ${p.id===data.selectedPageId?'selected':''}>${escapeHtml(p.title)}</option>`).join(''); modal.style.display='flex'; }
+function closeQuickAdd(){ modal.style.display='none'; }
+
+el('#qmCancel').addEventListener('click', closeQuickAdd);
+modal.addEventListener('click', e=>{ if(e.target===modal) closeQuickAdd(); });
+
+el('#qmSave').addEventListener('click', ()=>{
+  const text = qmText.value.trim(); if(!text){ alert('กรอกหัวข้อก่อน'); return; }
+  const dateStr = qmDate.value; const timeStr = qmTime.value || '00:00';
+  const [hh,mm] = timeStr.split(':').map(x=>parseInt(x||'0',10));
+  const [yy,mo,dd] = dateStr.split('-').map(x=>parseInt(x,10));
+  const due = new Date(yy, (mo-1), dd, hh, mm, 0, 0).getTime();
+  const pid = qmPage.value; const page = data.pages.find(p=>p.id===pid) || currentPage();
+  page.blocks.push({ id: uid(), type:'todo', text, done:false, due, createdAt: Date.now() });
+  page.updatedAt = Date.now(); saveData(); closeQuickAdd();
+  // refresh whichever view is active
+  const mode = el('#globalView').value; if(mode==='month'){ renderMonthGrid(monthCursor); } else if(mode==='year'){ renderYearGrid(yearCursor); } else { renderAll(); }
+});
+
+/* ---------- Cloud: GitHub Gist ---------- */
+const cloudModal = el('#cloudModal');
+const ghToken = el('#ghToken');
+const ghGistId = el('#ghGistId');
+const ghFilename = el('#ghFilename');
+const ghAutosync = el('#ghAutosync');
+const cloudStatus = el('#cloudStatus');
+
+function openCloud(){
+  ghToken.value = cloudCfg.token || '';
+  ghGistId.value = cloudCfg.gistId || '';
+  ghFilename.value = cloudCfg.filename || 'notionish-backup.json';
+  ghAutosync.checked = !!cloudCfg.autosync;
+  cloudStatus.textContent = cloudCfg.gistId ? `เชื่อมต่ออยู่กับ Gist ${cloudCfg.gistId}` : 'ยังไม่ได้เชื่อมต่อ';
+  cloudModal.style.display = 'flex';
+}
+function closeCloud(){ cloudModal.style.display = 'none'; }
+
+async function ghHeaders(){
+  if(!ghToken.value.trim()) throw new Error('ยังไม่ได้ใส่ token');
+  return {
+    'Authorization': `Bearer ${ghToken.value.trim()}`,
+    'Accept': 'application/vnd.github+json',
+    'Content-Type': 'application/json'
+  };
+}
+async function cloudCreate(){
+  try{
+    const body = {
+      description: 'Notion-ish backup',
+      public: false,
+      files: { [ghFilename.value.trim()||'notionish-backup.json']: { content: JSON.stringify(data, null, 2) } }
+    };
+    const res = await fetch('https://api.github.com/gists', { method:'POST', headers: await ghHeaders(), body: JSON.stringify(body) });
+    if(!res.ok) throw new Error('สร้าง Gist ไม่สำเร็จ');
+    const j = await res.json();
+    cloudCfg.gistId = j.id; cloudCfg.token = ghToken.value.trim(); cloudCfg.filename = ghFilename.value.trim(); saveCloudCfg();
+    cloudStatus.textContent = `สร้างสำเร็จ: ${j.id}`;
+  }catch(e){ cloudStatus.textContent = 'ผิดพลาด: ' + e.message; }
+}
+async function cloudPush(){
+  try{
+    if(!ghGistId.value.trim()) throw new Error('ยังไม่มี Gist ID');
+    const body = { files: { [ghFilename.value.trim()||'notionish-backup.json']: { content: JSON.stringify(data, null, 2) } } };
+    const res = await fetch(`https://api.github.com/gists/${ghGistId.value.trim()}`, { method:'PATCH', headers: await ghHeaders(), body: JSON.stringify(body) });
+    if(!res.ok) throw new Error('อัปขึ้นไม่สำเร็จ');
+    cloudCfg.gistId = ghGistId.value.trim(); cloudCfg.token = ghToken.value.trim(); cloudCfg.filename = ghFilename.value.trim(); cloudCfg.lastPushAt = Date.now(); saveCloudCfg();
+    cloudStatus.textContent = 'อัปโหลดสำเร็จ';
+  }catch(e){ cloudStatus.textContent = 'ผิดพลาด: ' + e.message; }
+}
+async function cloudPull(){
+  try{
+    if(!ghGistId.value.trim()) throw new Error('ยังไม่มี Gist ID');
+    const res = await fetch(`https://api.github.com/gists/${ghGistId.value.trim()}`, { headers: await ghHeaders() });
+    if(!res.ok) throw new Error('ดึงข้อมูลไม่สำเร็จ');
+    const j = await res.json();
+    const fname = ghFilename.value.trim()||'notionish-backup.json';
+    const file = j.files && j.files[fname];
+    if(!file || !file.content) throw new Error('ไม่พบไฟล์ใน Gist');
+    const obj = JSON.parse(file.content);
+    if(!obj.pages) throw new Error('ไฟล์ไม่ถูกต้อง');
+    if(!confirm('นำเข้าข้อมูลจาก Cloud และเขียนทับข้อมูลปัจจุบัน ใช่หรือไม่')) return;
+    data = obj; saveData(); renderAll();
+    cloudCfg.gistId = ghGistId.value.trim(); cloudCfg.token = ghToken.value.trim(); cloudCfg.filename = fname; saveCloudCfg();
+    cloudStatus.textContent = 'ดึงข้อมูลสำเร็จ';
+  }catch(e){ cloudStatus.textContent = 'ผิดพลาด: ' + e.message; }
+}
+function applyAutosync(){
+  cloudCfg.autosync = !!ghAutosync.checked; saveCloudCfg();
+  if(autosyncTimer){ clearInterval(autosyncTimer); autosyncTimer=null; }
+  if(cloudCfg.autosync){ autosyncTimer = setInterval(()=>{ cloudPush().catch(()=>{}); }, 10*60*1000); }
+}
+
+/* ---------- Events หลัก ---------- */
+el('#addPageBtn').addEventListener('click', addPage);
+el('#globalView').addEventListener('change', e => switchView(e.target.value));
+el('#newPageBtn').addEventListener('click', addPage);
+el('#deletePage').addEventListener('click', deletePage);
+el('#addText').addEventListener('click', () => addBlock('text'));
+el('#addTodo').addEventListener('click', () => addBlock('todo'));
+pageTitleEl.addEventListener('input', e => renamePage(e.target.value));
+
+sidebarSearchEl.addEventListener('input', renderSidebar);
+blockSearchEl.addEventListener('keydown', e => { if(e.key==='Enter'){ const results=searchAll(blockSearchEl.value); if(results.length) openSearchPanel(results); else alert('ไม่พบผลลัพธ์'); } });
+
+el('#closeSearch').addEventListener('click', closeSearchPanel);
+
+el('#exportBtn').addEventListener('click', doExport);
+el('#importBtn').addEventListener('click', () => el('#importFile').click());
+el('#importFile').addEventListener('change', e => { const file=e.target.files[0]; if(file) doImport(file); e.target.value=''; });
+
+// Cloud buttons
+el('#cloudBtn').addEventListener('click', openCloud);
+el('#cmClose').addEventListener('click', ()=>{ closeCloud(); applyAutosync(); });
+el('#cmCreate').addEventListener('click', cloudCreate);
+el('#cmSaveCfg').addEventListener('click', ()=>{ cloudCfg.token=ghToken.value.trim(); cloudCfg.gistId=ghGistId.value.trim(); cloudCfg.filename=(ghFilename.value.trim()||'notionish-backup.json'); saveCloudCfg(); cloudStatus.textContent='บันทึกการตั้งค่าแล้ว'; });
+el('#cmPush').addEventListener('click', cloudPush);
+el('#cmPull').addEventListener('click', cloudPull);
+el('#ghAutosync').addEventListener('change', applyAutosync);
+
+/* ---------- Export/Import ---------- */
+function doExport(){ const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='notionish-backup.json'; a.click(); URL.revokeObjectURL(url); }
+function doImport(file){ const reader=new FileReader(); reader.onload=()=>{ try{ const obj=JSON.parse(reader.result); if(!obj.pages) throw new Error('ไฟล์ไม่ถูกต้อง'); data=obj; saveData(); renderAll(); alert('นำเข้าข้อมูลสำเร็จ'); } catch(e){ alert('นำเข้าไม่สำเร็จ: '+e.message); } }; reader.readAsText(file); }
+
+/* ---------- Init ---------- */
+renderAll();
+el('#globalView').value='page';
+switchView('page');
+if(cloudCfg.autosync){ applyAutosync(); }
+</script>
+</body>
+</html>
